@@ -80,7 +80,7 @@ impl App {
 
         let games = steam::discover_games(&steam_root);
         let msg = if games.is_empty() {
-            format!("No games found in {}. Use 'Change...' to set Steam folder.", steam_root.display())
+            format!("No games found in {}. Use 'Change...' to set the folder containing steamapps/.", steam_root.display())
         } else {
             format!("Found {} games", games.len())
         };
@@ -112,7 +112,7 @@ impl App {
         self.detection = smokeapi::GameDetection::default();
         if self.games.is_empty() {
             self.status_message = format!(
-                "No games found in {}. Use 'Change...' to set Steam folder.",
+                "No games found in {}. Use 'Change...' to set the folder containing steamapps/.",
                 self.steam_root.display()
             );
         } else {
