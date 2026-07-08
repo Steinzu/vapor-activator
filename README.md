@@ -46,3 +46,7 @@ Select the game and click *Remove SmokeAPI*. Restores the original Steam API fil
 ## License
 
 MIT
+
+---
+
+*Built with the help of [OpenCode](https://opencode.ai)*
