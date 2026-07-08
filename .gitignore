@@ -1,0 +1,6 @@
+target/
+.AppDir/
+*.AppImage
+.appimagetool
+icon.png
+.vscode/
