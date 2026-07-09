@@ -74,8 +74,16 @@ impl App {
     fn new() -> Self {
         let home = dirs::home_dir().unwrap_or_default();
         let steam_root = load_steam_root().unwrap_or_else(|| {
-            let flatpak = home.join(".var/app/com.valvesoftware.Steam/.local/share/Steam");
-            if flatpak.exists() { flatpak } else { home.join(".local/share/Steam") }
+            let candidates: Vec<PathBuf> = if cfg!(windows) {
+                let pf = std::env::var("ProgramFiles(x86)").map(PathBuf::from).unwrap_or_default();
+                vec![pf.join("Steam")]
+            } else {
+                vec![
+                    home.join(".var/app/com.valvesoftware.Steam/.local/share/Steam"),
+                    home.join(".local/share/Steam"),
+                ]
+            };
+            candidates.iter().find(|p| p.join("steamapps").exists()).cloned().unwrap_or_default()
         });
 
         let games = steam::discover_games(&steam_root);
