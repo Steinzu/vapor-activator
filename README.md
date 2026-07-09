@@ -29,7 +29,9 @@ cargo build --release
 ## Usage
 
 1. **Set Steam library folder** — the folder containing `steamapps/` (auto-detected; use *Change...* if needed). Not the game install folder, not the Steam client binary.
-2. **Download SmokeAPI** — click *Download* in the left panel (fetches latest release from GitHub, cached in `~/.cache/vapor-activator/smokeapi/`)
+2. **Download SmokeAPI** — click *Download* in the left panel. Fetches the latest release from GitHub and caches it at:
+   - Linux: `~/.cache/vapor-activator/smokeapi/`
+   - Windows: `%LOCALAPPDATA%\vapor-activator\smokeapi\`
 3. **Select a game** — lists all installed games from your Steam libraries
 4. **Check DLCs you want unlocked** — unchecked DLCs stay at their real ownership status
 5. **Apply & Install** — writes `SmokeAPI.config.json` and sets up proxy mode
