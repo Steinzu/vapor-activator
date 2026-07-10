@@ -21,6 +21,31 @@ struct AppDetailsData {
     dlc: Vec<u64>,
 }
 
+#[derive(Deserialize, Debug)]
+struct SteamCmdResponse {
+    data: Option<HashMap<String, SteamCmdApp>>,
+}
+
+#[derive(Deserialize, Debug)]
+struct SteamCmdApp {
+    #[serde(default)]
+    extended: Option<SteamCmdExtended>,
+    #[serde(default)]
+    depots: Option<HashMap<String, SteamCmdDepot>>,
+}
+
+#[derive(Deserialize, Debug)]
+struct SteamCmdExtended {
+    #[serde(default)]
+    listofdlc: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct SteamCmdDepot {
+    #[serde(default)]
+    dlcappid: String,
+}
+
 const HIDDEN_DLC_URL: &str =
     "https://raw.githubusercontent.com/acidicoala/public-entitlements/refs/heads/steam/v2/dlc.json";
 
@@ -59,7 +84,6 @@ async fn fetch_dlc_names(
 
         dlcs.push(DlcInfo { appid: id, name });
 
-        // Rate limit for games with many DLCs, skip last iteration
         if count > 10 && i + 1 < count {
             tokio::time::sleep(std::time::Duration::from_millis(150)).await;
         }
@@ -69,10 +93,51 @@ async fn fetch_dlc_names(
     dlcs
 }
 
+fn parse_comma_dlc_ids(s: &str) -> Vec<u64> {
+    s.split(',').filter_map(|id| id.trim().parse::<u64>().ok()).collect()
+}
+
+async fn fetch_dlc_from_steamcmd(
+    client: &reqwest::Client,
+    appid: u64,
+) -> Vec<u64> {
+    let url = format!("https://api.steamcmd.net/v1/info/{}", appid);
+    let resp = match client.get(&url).send().await {
+        Ok(r) => r,
+        Err(_) => return vec![],
+    };
+    let cmd: SteamCmdResponse = match resp.json().await {
+        Ok(r) => r,
+        Err(_) => return vec![],
+    };
+    let app = match cmd.data.and_then(|mut d| d.remove(&appid.to_string())) {
+        Some(a) => a,
+        None => return vec![],
+    };
+
+    let mut ids = Vec::new();
+
+    if let Some(ext) = app.extended {
+        ids.extend(parse_comma_dlc_ids(&ext.listofdlc));
+    }
+    if let Some(depots) = app.depots {
+        for (_, depot) in depots {
+            if !depot.dlcappid.is_empty() {
+                if let Ok(id) = depot.dlcappid.parse::<u64>() {
+                    if !ids.contains(&id) {
+                        ids.push(id);
+                    }
+                }
+            }
+        }
+    }
+
+    ids
+}
+
 pub async fn fetch_dlc_list(appid: u64) -> Result<Vec<DlcInfo>, String> {
     let client = build_client()?;
 
-    // 1. Get DLC IDs from Steam Store API
     let url = format!(
         "https://store.steampowered.com/api/appdetails?appids={}",
         appid
@@ -94,7 +159,14 @@ pub async fn fetch_dlc_list(appid: u64) -> Result<Vec<DlcInfo>, String> {
 
     let mut dlc_ids: Vec<u64> = data.dlc.clone();
 
-    // 2. Merge hidden DLCs from community list
+    // Merge SteamCMD depot DLCs
+    for id in fetch_dlc_from_steamcmd(&client, appid).await {
+        if !dlc_ids.contains(&id) {
+            dlc_ids.push(id);
+        }
+    }
+
+    // Merge hidden DLCs from community list
     if let Ok(hidden_resp) = client.get(HIDDEN_DLC_URL).send().await {
         if let Ok(hidden_map) = hidden_resp
             .json::<HashMap<String, HashMap<String, String>>>()

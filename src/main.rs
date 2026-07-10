@@ -41,9 +41,7 @@ struct AsyncResult<T> {
 
 impl<T> AsyncResult<T> {
     fn new() -> Self {
-        Self {
-            inner: Arc::new(Mutex::new(None)),
-        }
+        Self { inner: Arc::new(Mutex::new(None)) }
     }
     fn take(&self) -> Option<Result<T, String>> {
         self.inner.lock().unwrap().take()
@@ -52,6 +50,28 @@ impl<T> AsyncResult<T> {
         *self.inner.lock().unwrap() = Some(val);
     }
 }
+
+#[derive(Clone, Copy, PartialEq)]
+enum Method {
+    Proxy,
+    Hook,
+    Koaloader,
+}
+
+impl Method {
+    fn label(&self) -> &str {
+        match self {
+            Method::Proxy => "Proxy",
+            Method::Hook => "Hook",
+            Method::Koaloader => "Koaloader",
+        }
+    }
+}
+
+const HOOK_DLLS: &[&str] = &[
+    "version.dll", "winhttp.dll", "winmm.dll",
+    "dinput8.dll", "d3d11.dll", "dxgi.dll",
+];
 
 struct App {
     games: Vec<steam::InstalledGame>,
@@ -66,20 +86,12 @@ struct App {
     status_message: String,
     filter: String,
     smokeapi_ready: bool,
+    koaloader_ready: bool,
     setup_result: AsyncResult<()>,
     setup_running: bool,
-    use_hook_mode: bool,
+    method: Method,
     hook_dll_index: usize,
 }
-
-const HOOK_DLLS: &[&str] = &[
-    "version.dll",
-    "winhttp.dll",
-    "winmm.dll",
-    "dinput8.dll",
-    "d3d11.dll",
-    "dxgi.dll",
-];
 
 impl App {
     fn new() -> Self {
@@ -116,10 +128,11 @@ impl App {
             unlocked_dlcs: BTreeSet::new(),
             status_message: msg,
             filter: String::new(),
-            smokeapi_ready: setup::is_installed(),
+            smokeapi_ready: setup::is_smokeapi_installed(),
+            koaloader_ready: setup::is_koaloader_installed(),
             setup_result: AsyncResult::new(),
             setup_running: false,
-            use_hook_mode: false,
+            method: Method::Proxy,
             hook_dll_index: 0,
         }
     }
@@ -131,14 +144,11 @@ impl App {
         self.dlc_list.clear();
         self.unlocked_dlcs.clear();
         self.detection = smokeapi::GameDetection::default();
-        if self.games.is_empty() {
-            self.status_message = format!(
-                "No games found in {}. Use 'Change...' to set the folder containing steamapps/.",
-                self.steam_root.display()
-            );
+        self.status_message = if self.games.is_empty() {
+            format!("No games found in {}.", self.steam_root.display())
         } else {
-            self.status_message = format!("Found {} games", self.games.len());
-        }
+            format!("Found {} games", self.games.len())
+        };
     }
 
     fn select_game(&mut self, idx: usize) {
@@ -146,7 +156,7 @@ impl App {
         self.selected_game = self.games.get(idx).cloned();
         self.dlc_list.clear();
         self.unlocked_dlcs.clear();
-        self.use_hook_mode = false;
+        self.method = Method::Proxy;
         self.detection = smokeapi::detect_game_type(
             &self.selected_game.as_ref().unwrap().game_dir(),
         );
@@ -195,6 +205,14 @@ impl App {
             smokeapi::GameType::Unknown => "Not detected",
         }
     }
+
+    fn arch_label(&self) -> &str {
+        match self.detection.arch {
+            smokeapi::Arch::X64 => "64-bit",
+            smokeapi::Arch::X86 => "32-bit",
+            smokeapi::Arch::Unknown => "unknown",
+        }
+    }
 }
 
 impl eframe::App for App {
@@ -203,13 +221,12 @@ impl eframe::App for App {
             self.setup_running = false;
             match result {
                 Ok(()) => {
-                    self.smokeapi_ready = true;
-                    self.status_message =
-                        "SmokeAPI downloaded and ready".to_string();
+                    self.smokeapi_ready = setup::is_smokeapi_installed();
+                    self.koaloader_ready = setup::is_koaloader_installed();
+                    self.status_message = "Download complete".to_string();
                 }
                 Err(e) => {
-                    self.status_message =
-                        format!("SmokeAPI setup failed: {}", e);
+                    self.status_message = format!("Download failed: {}", e);
                 }
             }
         }
@@ -219,8 +236,7 @@ impl eframe::App for App {
             match result {
                 Ok(dlcs) => {
                     self.dlc_list = dlcs;
-                    self.status_message =
-                        format!("Loaded {} DLCs", self.dlc_list.len());
+                    self.status_message = format!("Loaded {} DLCs", self.dlc_list.len());
                 }
                 Err(e) => {
                     self.status_message = format!("Error: {}", e);
@@ -258,15 +274,9 @@ impl eframe::App for App {
 
                 ui.horizontal(|ui| {
                     ui.label("Steam:");
-                    ui.label(
-                        egui::RichText::new(
-                            self.steam_root.display().to_string(),
-                        )
-                        .small(),
-                    );
+                    ui.label(egui::RichText::new(self.steam_root.display().to_string()).small());
                     if ui.small_button("Change...").clicked() {
-                        if let Some(path) = rfd::FileDialog::new().pick_folder()
-                        {
+                        if let Some(path) = rfd::FileDialog::new().pick_folder() {
                             self.steam_root = path;
                             save_steam_root(&self.steam_root);
                             self.rescan_games();
@@ -274,29 +284,33 @@ impl eframe::App for App {
                     }
                 });
 
+                ui.separator();
+                ui.label("Downloads:");
+
                 ui.horizontal(|ui| {
                     ui.label("SmokeAPI:");
                     if self.smokeapi_ready {
-                        ui.label(
-                            egui::RichText::new("Ready")
-                                .color(egui::Color32::GREEN),
-                        );
+                        ui.colored_label(egui::Color32::GREEN, "Ready");
                     } else if self.setup_running {
                         ui.add(egui::Spinner::new());
-                        ui.label("Downloading...");
                     } else {
-                        ui.label(
-                            egui::RichText::new("Not installed")
-                                .color(egui::Color32::YELLOW),
-                        );
-                        if ui.button("Download").clicked() {
-                            self.setup_running = true;
-                            self.status_message =
-                                "Downloading SmokeAPI...".to_string();
-                            let result = self.setup_result.clone();
-                            tokio::task::spawn(async move {
-                                result.set(setup::download_latest().await);
-                            });
+                        ui.colored_label(egui::Color32::YELLOW, "Missing");
+                        if ui.small_button("Get").clicked() {
+                            self.download_smokeapi();
+                        }
+                    }
+                });
+
+                ui.horizontal(|ui| {
+                    ui.label("Koaloader:");
+                    if self.koaloader_ready {
+                        ui.colored_label(egui::Color32::GREEN, "Ready");
+                    } else if self.setup_running {
+                        ui.add(egui::Spinner::new());
+                    } else {
+                        ui.colored_label(egui::Color32::YELLOW, "Missing");
+                        if ui.small_button("Get").clicked() {
+                            self.download_koaloader();
                         }
                     }
                 });
@@ -308,17 +322,12 @@ impl eframe::App for App {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     for (idx, game) in self.games.iter().enumerate() {
                         if !filter_lower.is_empty()
-                            && !game
-                                .name
-                                .to_lowercase()
-                                .contains(&filter_lower)
+                            && !game.name.to_lowercase().contains(&filter_lower)
                         {
                             continue;
                         }
-
                         let selected = self.selected_idx == Some(idx);
-                        if ui.selectable_label(selected, &game.name).clicked()
-                        {
+                        if ui.selectable_label(selected, &game.name).clicked() {
                             clicked_idx = Some(idx);
                         }
                     }
@@ -332,70 +341,38 @@ impl eframe::App for App {
             if let Some(ref gi) = self.selected_game {
                 let game_dir = gi.game_dir();
                 ui.heading(&gi.name);
-                ui.label(format!("AppID: {}", gi.appid));
+                ui.label(format!("AppID: {}  |  Type: {}  |  Arch: {}", gi.appid, self.game_type_label(), self.arch_label()));
                 ui.label(format!("Path: {}", game_dir.display()));
 
                 ui.separator();
 
-                ui.horizontal(|ui| {
-                    ui.label("Type:");
-                    ui.label(self.game_type_label());
-                });
-
-                let backup_exists = self
-                    .detection
-                    .backup_path
-                    .as_ref()
-                    .map(|p| p.exists())
-                    .unwrap_or(false);
+                let backup_exists = self.detection.backup_path.as_ref()
+                    .map(|p| p.exists()).unwrap_or(false);
                 let config_exists = self.detection.config_exists;
-                let proxy_stale = self.detection.is_smokeapi_proxy
-                    && !backup_exists
-                    && !config_exists;
+                let proxy_stale = self.detection.is_smokeapi_proxy && !backup_exists && !config_exists;
 
                 ui.horizontal(|ui| {
                     ui.label("SmokeAPI:");
                     if backup_exists {
-                        ui.label(
-                            egui::RichText::new("Installed (proxy mode)")
-                                .color(egui::Color32::GREEN),
-                        );
+                        ui.colored_label(egui::Color32::GREEN, "Installed (proxy)");
                     } else if config_exists {
-                        ui.label(
-                            egui::RichText::new("Installed (config only)")
-                                .color(egui::Color32::GREEN),
-                        );
+                        ui.colored_label(egui::Color32::GREEN, "Installed (config)");
                     } else if proxy_stale {
-                        ui.label(
-                            egui::RichText::new(
-                                "Stale install — needs cleanup",
-                            )
-                            .color(egui::Color32::RED),
-                        );
+                        ui.colored_label(egui::Color32::RED, "Stale — needs cleanup");
                     } else {
-                        ui.label(
-                            egui::RichText::new("Not installed")
-                                .color(egui::Color32::YELLOW),
-                        );
+                        ui.colored_label(egui::Color32::YELLOW, "Not installed");
                     }
                 });
 
                 if proxy_stale {
-                    ui.colored_label(
-                        egui::Color32::RED,
-                        "SmokeAPI DLL is still active but config is missing. Click 'Remove SmokeAPI' to clean up.",
-                    );
+                    ui.colored_label(egui::Color32::RED,
+                        "SmokeAPI DLL active but config missing. Click Remove to clean up.");
                 }
 
                 if let Some(ref api_path) = self.detection.api_path {
                     ui.label(format!("Steam API: {}", api_path.display()));
-                } else if self.detection.game_type
-                    == smokeapi::GameType::Unknown
-                {
-                    ui.colored_label(
-                        egui::Color32::RED,
-                        "No steam_api file found in game directory",
-                    );
+                } else if self.detection.game_type == smokeapi::GameType::Unknown {
+                    ui.colored_label(egui::Color32::RED, "No steam_api file found");
                 }
 
                 ui.separator();
@@ -403,7 +380,6 @@ impl eframe::App for App {
 
                 if self.dlc_loading {
                     ui.add(egui::Spinner::new());
-                    ui.label("Loading DLC information...");
                 } else {
                     if ui.button("Refresh").clicked() {
                         if let Some(idx) = self.selected_idx {
@@ -428,29 +404,19 @@ impl eframe::App for App {
                         let available = ui.available_height();
                         egui::ScrollArea::vertical()
                             .id_salt("dlc_scroll")
-                            .max_height((available - 100.0).max(100.0))
+                            .max_height((available - 130.0).max(100.0))
                             .show(ui, |ui| {
                                 for dlc in &self.dlc_list {
-                                    let mut checked = self
-                                        .unlocked_dlcs
-                                        .contains(&dlc.appid);
+                                    let mut checked = self.unlocked_dlcs.contains(&dlc.appid);
                                     ui.horizontal(|ui| {
-                                        if ui
-                                            .checkbox(&mut checked, "")
-                                            .changed()
-                                        {
+                                        if ui.checkbox(&mut checked, "").changed() {
                                             if checked {
-                                                self.unlocked_dlcs
-                                                    .insert(dlc.appid);
+                                                self.unlocked_dlcs.insert(dlc.appid);
                                             } else {
-                                                self.unlocked_dlcs
-                                                    .remove(&dlc.appid);
+                                                self.unlocked_dlcs.remove(&dlc.appid);
                                             }
                                         }
-                                        ui.label(format!(
-                                            "{} ({})",
-                                            dlc.name, dlc.appid
-                                        ));
+                                        ui.label(format!("{} ({})", dlc.name, dlc.appid));
                                     });
                                 }
                             });
@@ -459,57 +425,54 @@ impl eframe::App for App {
 
                         let can_apply = self.smokeapi_ready
                             && self.detection.api_path.is_some()
-                            && self.detection.game_type
-                                != smokeapi::GameType::Unknown;
-                        let can_remove =
-                            backup_exists || config_exists || proxy_stale;
-                        let can_hook = self.detection.game_type == smokeapi::GameType::Proton64
+                            && self.detection.game_type != smokeapi::GameType::Unknown;
+                        let can_remove = backup_exists || config_exists || proxy_stale;
+                        let can_method = self.detection.game_type == smokeapi::GameType::Proton64
                             || self.detection.game_type == smokeapi::GameType::Proton32;
 
-                        if can_hook {
-                            ui.checkbox(&mut self.use_hook_mode, "Hook mode");
-                            if self.use_hook_mode {
-                                ui.label("as:");
-                                egui::ComboBox::from_id_salt("hook_dll")
-                                    .selected_text(HOOK_DLLS[self.hook_dll_index])
+                        if can_method {
+                            ui.horizontal(|ui| {
+                                ui.label("Method:");
+                                egui::ComboBox::from_id_salt("method")
+                                    .selected_text(self.method.label())
                                     .show_ui(ui, |ui| {
-                                        for (i, name) in HOOK_DLLS.iter().enumerate() {
-                                            ui.selectable_value(&mut self.hook_dll_index, i, *name);
+                                        for &m in &[Method::Proxy, Method::Hook, Method::Koaloader] {
+                                            if m == Method::Koaloader && !self.koaloader_ready {
+                                                continue;
+                                            }
+                                            ui.selectable_value(&mut self.method, m, m.label());
                                         }
                                     });
-                            }
+
+                                if self.method != Method::Proxy {
+                                    ui.label("as");
+                                    egui::ComboBox::from_id_salt("hook_dll")
+                                        .selected_text(HOOK_DLLS[self.hook_dll_index])
+                                        .show_ui(ui, |ui| {
+                                            for (i, name) in HOOK_DLLS.iter().enumerate() {
+                                                ui.selectable_value(&mut self.hook_dll_index, i, *name);
+                                            }
+                                        });
+                                }
+                            });
                         }
 
                         ui.horizontal(|ui| {
-                            if ui
-                                .add_enabled(
-                                    can_apply,
-                                    egui::Button::new("Apply & Install"),
-                                )
-                                .clicked()
-                            {
+                            if ui.add_enabled(can_apply, egui::Button::new("Apply & Install")).clicked() {
                                 self.apply_smokeapi();
                             }
-                            if can_remove
-                                && ui.button("Remove SmokeAPI").clicked()
-                            {
+                            if can_remove && ui.button("Remove SmokeAPI").clicked() {
                                 self.remove_smokeapi();
                             }
                         });
 
                         if !self.smokeapi_ready {
-                            ui.colored_label(
-                                egui::Color32::YELLOW,
-                                "SmokeAPI not downloaded — click 'Download' in left panel",
-                            );
+                            ui.colored_label(egui::Color32::YELLOW,
+                                "SmokeAPI not downloaded — use 'Get' in left panel");
                         }
-                        if self.detection.game_type
-                            == smokeapi::GameType::Unknown
-                        {
-                            ui.colored_label(
-                                egui::Color32::RED,
-                                "No steam_api file found in game directory",
-                            );
+                        if self.method == Method::Koaloader && !self.koaloader_ready {
+                            ui.colored_label(egui::Color32::YELLOW,
+                                "Koaloader not downloaded — use 'Get' in left panel");
                         }
                     }
                 }
@@ -523,48 +486,57 @@ impl eframe::App for App {
 }
 
 impl App {
+    fn download_smokeapi(&mut self) {
+        self.setup_running = true;
+        self.status_message = "Downloading SmokeAPI...".to_string();
+        let result = self.setup_result.clone();
+        tokio::task::spawn(async move {
+            result.set(setup::download_smokeapi().await);
+        });
+    }
+
+    fn download_koaloader(&mut self) {
+        self.setup_running = true;
+        self.status_message = "Downloading Koaloader (75MB)...".to_string();
+        let result = self.setup_result.clone();
+        tokio::task::spawn(async move {
+            result.set(setup::download_koaloader().await);
+        });
+    }
+
     fn apply_smokeapi(&mut self) {
         let api_path = match self.detection.api_path.clone() {
             Some(p) => p,
             None => {
-                self.status_message =
-                    "No steam_api file found".to_string();
+                self.status_message = "No steam_api file found".to_string();
                 return;
             }
         };
 
-        let dlcs: Vec<u64> =
-            self.unlocked_dlcs.iter().copied().collect();
+        let dlcs: Vec<u64> = self.unlocked_dlcs.iter().copied().collect();
         let cache = setup::cache_dir();
 
-        let result = if self.use_hook_mode {
-            smokeapi::install_hook(
-                &api_path,
-                &self.detection.game_type,
-                HOOK_DLLS[self.hook_dll_index],
-                &dlcs,
-                &cache,
-            )
-        } else {
-            smokeapi::install_proxy(
-                &api_path,
-                &self.detection.game_type,
-                &dlcs,
-                &cache,
-            )
+        let result = match self.method {
+            Method::Proxy => smokeapi::install_proxy(&api_path, &self.detection.game_type, &dlcs, &cache),
+            Method::Hook => smokeapi::install_hook(
+                &api_path, self.detection.arch, &self.detection.game_type,
+                HOOK_DLLS[self.hook_dll_index], &dlcs, &cache,
+            ),
+            Method::Koaloader => {
+                let koala = setup::koaloader_dir();
+                smokeapi::install_koaloader(
+                    &api_path, self.detection.arch, &self.detection.game_type,
+                    HOOK_DLLS[self.hook_dll_index], &dlcs, &cache, &koala,
+                )
+            }
         };
 
         match result {
             Ok(()) => {
                 self.reanalyze();
-                self.status_message = format!(
-                    "Installed SmokeAPI with {} DLC(s) unlocked",
-                    dlcs.len()
-                );
+                self.status_message = format!("Installed with {} DLC(s) unlocked", dlcs.len());
             }
-            Err(e) => {
-                self.status_message = e;
-            }
+            Err(e) => self.status_message = e,
         }
     }
 
@@ -572,33 +544,25 @@ impl App {
         let api_path = match self.detection.api_path.clone() {
             Some(p) => p,
             None => {
-                self.status_message =
-                    "No steam_api file found".to_string();
+                self.status_message = "No steam_api file found".to_string();
                 return;
             }
         };
 
-        let had_backup = self
-            .detection
-            .backup_path
-            .as_ref()
-            .map(|p| p.exists())
-            .unwrap_or(false);
+        let had_backup = self.detection.backup_path.as_ref()
+            .map(|p| p.exists()).unwrap_or(false);
 
         match smokeapi::remove_proxy(&api_path, &self.detection.game_type) {
             Ok(()) => {
                 self.unlocked_dlcs.clear();
                 self.reanalyze();
-                if had_backup {
-                    self.status_message =
-                        "SmokeAPI removed, original restored".to_string();
+                self.status_message = if had_backup {
+                    "Removed, original restored".to_string()
                 } else {
-                    self.status_message = "SmokeAPI removed. Verify game files in Steam if game won't launch.".to_string();
-                }
+                    "Removed. Verify game files in Steam if needed.".to_string()
+                };
             }
-            Err(e) => {
-                self.status_message = e;
-            }
+            Err(e) => self.status_message = e,
         }
     }
 }
