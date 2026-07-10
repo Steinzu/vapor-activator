@@ -18,12 +18,9 @@ Pick exactly which DLCs to unlock per game — no all-or-nothing.
 - Auto-downloads SmokeAPI and Koaloader from GitHub releases
 - Configurable Steam library path, persisted across sessions
 
-## Requirements
+## Build from source
 
-- [Rust toolchain](https://rustup.rs)
-- Linux or Windows with Steam installed
-
-## Build
+Requires [Rust](https://rustup.rs).
 
 ```bash
 cargo build --release
