@@ -127,11 +127,11 @@ fn file_names(game_type: &GameType) -> Result<(&str, &str, &str), String> {
 }
 
 fn hook_dll_name(game_type: &GameType) -> Result<&str, String> {
-    // dinput8.dll is imported by almost every game that uses controllers/keyboard,
-    // and unlike winmm/version/winhttp, it's always loaded natively on Proton
-    // (not as a Wine built-in). This makes it a reliable hook entry point.
+    // version.dll is safe: if loaded, it hooks Steam API calls without
+    // replacing any functions the game actually calls directly. If Proton
+    // ignores it (built-in override), the game simply runs unhooked.
     match game_type {
-        GameType::Proton64 | GameType::Proton32 => Ok("dinput8.dll"),
+        GameType::Proton64 | GameType::Proton32 => Ok("version.dll"),
         GameType::Native => Err("Hook mode not supported for native Linux games".to_string()),
         GameType::Unknown => Err("Unknown game type".to_string()),
     }
@@ -223,7 +223,7 @@ pub fn remove_proxy(
         }
 
         // Clean hook-mode files (version.dll, etc.)
-        for hook in &["version.dll", "winhttp.dll", "winmm.dll", "dinput8.dll"] {
+        for hook in &["version.dll", "winhttp.dll", "winmm.dll"] {
             let hook_path = dir.join(hook);
             if hook_path.exists() && files_match_size(&hook_path, &smokeapi_src) {
                 let _ = std::fs::remove_file(&hook_path);
