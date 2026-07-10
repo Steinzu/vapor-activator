@@ -425,8 +425,10 @@ impl eframe::App for App {
                             }
                         });
 
+                        let available = ui.available_height();
                         egui::ScrollArea::vertical()
                             .id_salt("dlc_scroll")
+                            .max_height((available - 100.0).max(100.0))
                             .show(ui, |ui| {
                                 for dlc in &self.dlc_list {
                                     let mut checked = self
