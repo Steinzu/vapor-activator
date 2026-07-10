@@ -72,7 +72,14 @@ struct App {
     hook_dll_index: usize,
 }
 
-const HOOK_DLLS: &[&str] = &["version.dll", "winhttp.dll", "winmm.dll"];
+const HOOK_DLLS: &[&str] = &[
+    "version.dll",
+    "winhttp.dll",
+    "winmm.dll",
+    "dinput8.dll",
+    "d3d11.dll",
+    "dxgi.dll",
+];
 
 impl App {
     fn new() -> Self {

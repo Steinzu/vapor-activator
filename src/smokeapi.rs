@@ -215,7 +215,7 @@ pub fn remove_proxy(
         }
 
         // Clean hook-mode files (version.dll, etc.)
-        for hook in &["version.dll", "winhttp.dll", "winmm.dll"] {
+        for hook in &["version.dll", "winhttp.dll", "winmm.dll", "dinput8.dll", "d3d11.dll", "dxgi.dll"] {
             let hook_path = dir.join(hook);
             if hook_path.exists() && files_match_size(&hook_path, &smokeapi_src) {
                 let _ = std::fs::remove_file(&hook_path);
