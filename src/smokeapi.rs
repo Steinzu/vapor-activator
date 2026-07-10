@@ -127,9 +127,6 @@ fn file_names(game_type: &GameType) -> Result<(&str, &str, &str), String> {
 }
 
 fn hook_dll_name(game_type: &GameType) -> Result<&str, String> {
-    // version.dll is safe: if loaded, it hooks Steam API calls without
-    // replacing any functions the game actually calls directly. If Proton
-    // ignores it (built-in override), the game simply runs unhooked.
     match game_type {
         GameType::Proton64 | GameType::Proton32 => Ok("version.dll"),
         GameType::Native => Err("Hook mode not supported for native Linux games".to_string()),

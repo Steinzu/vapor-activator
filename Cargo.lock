@@ -3930,7 +3930,6 @@ dependencies = [
  "dirs",
  "eframe",
  "egui",
- "flate2",
  "reqwest",
  "rfd",
  "serde",

@@ -2,8 +2,6 @@
 
 Selective Steam DLC manager using [SmokeAPI](https://github.com/acidicoala/SmokeAPI). Pick which DLCs to unlock per game instead of all-or-nothing.
 
-![](screenshot.png)
-
 ## Features
 
 - Detects all installed Steam games (Flatpak and native paths)
