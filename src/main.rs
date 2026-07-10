@@ -68,6 +68,7 @@ struct App {
     smokeapi_ready: bool,
     setup_result: AsyncResult<()>,
     setup_running: bool,
+    use_hook_mode: bool,
 }
 
 impl App {
@@ -108,6 +109,7 @@ impl App {
             smokeapi_ready: setup::is_installed(),
             setup_result: AsyncResult::new(),
             setup_running: false,
+            use_hook_mode: false,
         }
     }
 
@@ -447,6 +449,12 @@ impl eframe::App for App {
                                 != smokeapi::GameType::Unknown;
                         let can_remove =
                             backup_exists || config_exists || proxy_stale;
+                        let can_hook = self.detection.game_type == smokeapi::GameType::Proton64
+                            || self.detection.game_type == smokeapi::GameType::Proton32;
+
+                        if can_hook {
+                            ui.checkbox(&mut self.use_hook_mode, "Hook mode (version.dll) — for games that block proxy DLLs");
+                        }
 
                         ui.horizontal(|ui| {
                             if ui
@@ -505,12 +513,23 @@ impl App {
             self.unlocked_dlcs.iter().copied().collect();
         let cache = setup::cache_dir();
 
-        match smokeapi::install_proxy(
-            &api_path,
-            &self.detection.game_type,
-            &dlcs,
-            &cache,
-        ) {
+        let result = if self.use_hook_mode {
+            smokeapi::install_hook(
+                &api_path,
+                &self.detection.game_type,
+                &dlcs,
+                &cache,
+            )
+        } else {
+            smokeapi::install_proxy(
+                &api_path,
+                &self.detection.game_type,
+                &dlcs,
+                &cache,
+            )
+        };
+
+        match result {
             Ok(()) => {
                 self.reanalyze();
                 self.status_message = format!(

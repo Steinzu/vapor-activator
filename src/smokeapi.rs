@@ -126,6 +126,47 @@ fn file_names(game_type: &GameType) -> Result<(&str, &str, &str), String> {
     }
 }
 
+fn hook_dll_name(game_type: &GameType) -> Result<&str, String> {
+    match game_type {
+        GameType::Proton64 | GameType::Proton32 => Ok("version.dll"),
+        GameType::Native => Err("Hook mode not supported for native Linux games".to_string()),
+        GameType::Unknown => Err("Unknown game type".to_string()),
+    }
+}
+
+fn smokeapi_cache_name(game_type: &GameType) -> Result<&str, String> {
+    match game_type {
+        GameType::Proton64 => Ok("smoke_api64.dll"),
+        GameType::Proton32 => Ok("smoke_api32.dll"),
+        GameType::Native => Ok("libsmoke_api64.so"),
+        GameType::Unknown => Err("Unknown game type".to_string()),
+    }
+}
+
+pub fn install_hook(
+    steam_api_path: &Path,
+    game_type: &GameType,
+    unlocked_dlcs: &[u64],
+    cache_dir: &Path,
+) -> Result<(), String> {
+    let hook_name = hook_dll_name(game_type)?;
+    let smokeapi_name = smokeapi_cache_name(game_type)?;
+    let config_dir = steam_api_path.parent().unwrap_or(Path::new("."));
+
+    let config = generate_config(unlocked_dlcs);
+    let json = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
+    std::fs::write(config_dir.join("SmokeAPI.config.json"), json).map_err(|e| e.to_string())?;
+
+    let source = cache_dir.join(smokeapi_name);
+    if !source.exists() {
+        return Err(format!("{} not found in cache. Re-download SmokeAPI.", smokeapi_name));
+    }
+    std::fs::copy(&source, config_dir.join(hook_name))
+        .map_err(|e| format!("Failed to copy {}: {}", smokeapi_name, e))?;
+
+    Ok(())
+}
+
 pub fn install_proxy(
     steam_api_path: &Path,
     game_type: &GameType,
