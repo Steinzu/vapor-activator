@@ -69,7 +69,10 @@ struct App {
     setup_result: AsyncResult<()>,
     setup_running: bool,
     use_hook_mode: bool,
+    hook_dll_index: usize,
 }
+
+const HOOK_DLLS: &[&str] = &["version.dll", "winhttp.dll", "winmm.dll"];
 
 impl App {
     fn new() -> Self {
@@ -110,6 +113,7 @@ impl App {
             setup_result: AsyncResult::new(),
             setup_running: false,
             use_hook_mode: false,
+            hook_dll_index: 0,
         }
     }
 
@@ -135,6 +139,7 @@ impl App {
         self.selected_game = self.games.get(idx).cloned();
         self.dlc_list.clear();
         self.unlocked_dlcs.clear();
+        self.use_hook_mode = false;
         self.detection = smokeapi::detect_game_type(
             &self.selected_game.as_ref().unwrap().game_dir(),
         );
@@ -453,7 +458,17 @@ impl eframe::App for App {
                             || self.detection.game_type == smokeapi::GameType::Proton32;
 
                         if can_hook {
-                            ui.checkbox(&mut self.use_hook_mode, "Hook mode (version.dll) — for games that block proxy DLLs");
+                            ui.checkbox(&mut self.use_hook_mode, "Hook mode");
+                            if self.use_hook_mode {
+                                ui.label("as:");
+                                egui::ComboBox::from_id_salt("hook_dll")
+                                    .selected_text(HOOK_DLLS[self.hook_dll_index])
+                                    .show_ui(ui, |ui| {
+                                        for (i, name) in HOOK_DLLS.iter().enumerate() {
+                                            ui.selectable_value(&mut self.hook_dll_index, i, *name);
+                                        }
+                                    });
+                            }
                         }
 
                         ui.horizontal(|ui| {
@@ -517,6 +532,7 @@ impl App {
             smokeapi::install_hook(
                 &api_path,
                 &self.detection.game_type,
+                HOOK_DLLS[self.hook_dll_index],
                 &dlcs,
                 &cache,
             )

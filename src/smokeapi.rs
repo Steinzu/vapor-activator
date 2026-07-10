@@ -126,14 +126,6 @@ fn file_names(game_type: &GameType) -> Result<(&str, &str, &str), String> {
     }
 }
 
-fn hook_dll_name(game_type: &GameType) -> Result<&str, String> {
-    match game_type {
-        GameType::Proton64 | GameType::Proton32 => Ok("version.dll"),
-        GameType::Native => Err("Hook mode not supported for native Linux games".to_string()),
-        GameType::Unknown => Err("Unknown game type".to_string()),
-    }
-}
-
 fn smokeapi_cache_name(game_type: &GameType) -> Result<&str, String> {
     match game_type {
         GameType::Proton64 => Ok("smoke_api64.dll"),
@@ -146,10 +138,13 @@ fn smokeapi_cache_name(game_type: &GameType) -> Result<&str, String> {
 pub fn install_hook(
     steam_api_path: &Path,
     game_type: &GameType,
+    hook_dll: &str,
     unlocked_dlcs: &[u64],
     cache_dir: &Path,
 ) -> Result<(), String> {
-    let hook_name = hook_dll_name(game_type)?;
+    if *game_type == GameType::Native {
+        return Err("Hook mode not supported for native Linux games".to_string());
+    }
     let smokeapi_name = smokeapi_cache_name(game_type)?;
     let config_dir = steam_api_path.parent().unwrap_or(Path::new("."));
 
@@ -161,7 +156,7 @@ pub fn install_hook(
     if !source.exists() {
         return Err(format!("{} not found in cache. Re-download SmokeAPI.", smokeapi_name));
     }
-    std::fs::copy(&source, config_dir.join(hook_name))
+    std::fs::copy(&source, config_dir.join(hook_dll))
         .map_err(|e| format!("Failed to copy {}: {}", smokeapi_name, e))?;
 
     Ok(())
