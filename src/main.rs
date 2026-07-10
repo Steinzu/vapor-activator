@@ -453,7 +453,7 @@ impl eframe::App for App {
                             || self.detection.game_type == smokeapi::GameType::Proton32;
 
                         if can_hook {
-                            ui.checkbox(&mut self.use_hook_mode, "Hook mode (version.dll) — for games that block proxy DLLs");
+                            ui.checkbox(&mut self.use_hook_mode, "Hook mode (winmm.dll) — for games that block proxy DLLs");
                         }
 
                         ui.horizontal(|ui| {

@@ -68,7 +68,7 @@ pub fn read_existing_config(config_dir: &Path) -> Option<SmokeApiConfig> {
 
 fn scan_for_file(game_dir: &Path, name: &str) -> Option<PathBuf> {
     walkdir::WalkDir::new(game_dir)
-        .max_depth(5)
+        .max_depth(10)
         .into_iter()
         .filter_map(|e| e.ok())
         .find(|e| e.file_name().to_string_lossy() == name)
@@ -127,8 +127,10 @@ fn file_names(game_type: &GameType) -> Result<(&str, &str, &str), String> {
 }
 
 fn hook_dll_name(game_type: &GameType) -> Result<&str, String> {
+    // winmm.dll is imported by virtually every Windows game, making it
+    // the most reliable hook entry point. Fall back to version.dll if needed.
     match game_type {
-        GameType::Proton64 | GameType::Proton32 => Ok("version.dll"),
+        GameType::Proton64 | GameType::Proton32 => Ok("winmm.dll"),
         GameType::Native => Err("Hook mode not supported for native Linux games".to_string()),
         GameType::Unknown => Err("Unknown game type".to_string()),
     }
