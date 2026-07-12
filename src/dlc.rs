@@ -60,6 +60,7 @@ fn build_client() -> Result<reqwest::Client, String> {
 async fn fetch_dlc_names(
     client: &reqwest::Client,
     ids: &[u64],
+    hidden_names: &HashMap<u64, String>,
 ) -> Vec<DlcInfo> {
     let mut dlcs = Vec::with_capacity(ids.len());
     let count = ids.len();
@@ -70,17 +71,23 @@ async fn fetch_dlc_names(
             id
         );
 
-        let name = match client.get(&url).send().await {
+        let mut name = match client.get(&url).send().await {
             Ok(r) => match r.json::<HashMap<String, AppDetailsResponse>>().await {
                 Ok(resp) => resp
                     .get(&id.to_string())
                     .and_then(|r| r.data.as_ref())
                     .map(|d| d.name.clone())
-                    .unwrap_or_else(|| format!("DLC {}", id)),
-                Err(_) => format!("DLC {}", id),
+                    .filter(|n| !n.is_empty())
+                    .unwrap_or_default(),
+                Err(_) => String::new(),
             },
-            Err(_) => format!("DLC {}", id),
+            Err(_) => String::new(),
         };
+
+        // Fall back to hidden DLCs list for names
+        if name.is_empty() {
+            name = hidden_names.get(&id).cloned().unwrap_or_else(|| format!("DLC {}", id));
+        }
 
         dlcs.push(DlcInfo { appid: id, name });
 
@@ -135,6 +142,36 @@ async fn fetch_dlc_from_steamcmd(
     ids
 }
 
+async fn fetch_hidden_dlcs(
+    client: &reqwest::Client,
+    appid: u64,
+) -> (Vec<u64>, HashMap<u64, String>) {
+    let mut ids = Vec::new();
+    let mut names = HashMap::new();
+
+    let resp = match client.get(HIDDEN_DLC_URL).send().await {
+        Ok(r) => r,
+        Err(_) => return (ids, names),
+    };
+    let map: HashMap<String, HashMap<String, String>> = match resp.json().await {
+        Ok(m) => m,
+        Err(_) => return (ids, names),
+    };
+
+    if let Some(game_dlcs) = map.get(&appid.to_string()) {
+        for (id_str, dlc_name) in game_dlcs {
+            if let Ok(id) = id_str.parse::<u64>() {
+                if !ids.contains(&id) {
+                    ids.push(id);
+                }
+                names.insert(id, dlc_name.clone());
+            }
+        }
+    }
+
+    (ids, names)
+}
+
 pub async fn fetch_dlc_list(appid: u64) -> Result<Vec<DlcInfo>, String> {
     let client = build_client()?;
 
@@ -166,21 +203,11 @@ pub async fn fetch_dlc_list(appid: u64) -> Result<Vec<DlcInfo>, String> {
         }
     }
 
-    // Merge hidden DLCs from community list
-    if let Ok(hidden_resp) = client.get(HIDDEN_DLC_URL).send().await {
-        if let Ok(hidden_map) = hidden_resp
-            .json::<HashMap<String, HashMap<String, String>>>()
-            .await
-        {
-            if let Some(game_dlcs) = hidden_map.get(&appid.to_string()) {
-                for id_str in game_dlcs.keys() {
-                    if let Ok(id) = id_str.parse::<u64>() {
-                        if !dlc_ids.contains(&id) {
-                            dlc_ids.push(id);
-                        }
-                    }
-                }
-            }
+    // Merge hidden DLCs and collect names
+    let (hidden_ids, hidden_names) = fetch_hidden_dlcs(&client, appid).await;
+    for id in hidden_ids {
+        if !dlc_ids.contains(&id) {
+            dlc_ids.push(id);
         }
     }
 
@@ -188,5 +215,5 @@ pub async fn fetch_dlc_list(appid: u64) -> Result<Vec<DlcInfo>, String> {
         return Ok(vec![]);
     }
 
-    Ok(fetch_dlc_names(&client, &dlc_ids).await)
+    Ok(fetch_dlc_names(&client, &dlc_ids, &hidden_names).await)
 }

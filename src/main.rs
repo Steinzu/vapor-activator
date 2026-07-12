@@ -6,12 +6,14 @@ mod smokeapi;
 mod steam;
 
 use eframe::egui;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 const CONFIG_DIR: &str = "vapor-activator";
 const CONFIG_FILE: &str = "config.json";
+
+type DlcResults = Arc<Mutex<HashMap<u64, Result<Vec<dlc::DlcInfo>, String>>>>;
 
 fn config_path() -> PathBuf {
     dirs::config_dir()
@@ -82,7 +84,7 @@ struct App {
     selected_game: Option<steam::InstalledGame>,
     detection: smokeapi::GameDetection,
     dlc_list: Vec<dlc::DlcInfo>,
-    dlc_result: AsyncResult<(u64, Vec<dlc::DlcInfo>)>,
+    dlc_results: DlcResults,
     dlc_loading: bool,
     unlocked_dlcs: BTreeSet<u64>,
     status_message: String,
@@ -91,7 +93,6 @@ struct App {
     koaloader_ready: bool,
     downloading: Option<&'static str>,
     setup_result: AsyncResult<()>,
-    dlc_loading_appid: Option<u64>,
     method: Method,
     hook_dll_index: usize,
 }
@@ -126,7 +127,7 @@ impl App {
             selected_game: None,
             detection: smokeapi::GameDetection::default(),
             dlc_list: vec![],
-            dlc_result: AsyncResult::new(),
+            dlc_results: Arc::new(Mutex::new(HashMap::new())),
             dlc_loading: false,
             unlocked_dlcs: BTreeSet::new(),
             status_message: msg,
@@ -135,7 +136,6 @@ impl App {
             koaloader_ready: setup::is_koaloader_installed(),
             downloading: None,
             setup_result: AsyncResult::new(),
-            dlc_loading_appid: None,
             method: Method::Proxy,
             hook_dll_index: 0,
         }
@@ -167,15 +167,12 @@ impl App {
         self.load_existing_config();
 
         let appid = self.games[idx].appid;
-        let result = self.dlc_result.clone();
+        let results = self.dlc_results.clone();
         self.dlc_loading = true;
-        self.dlc_loading_appid = Some(appid);
         self.status_message = "Loading DLCs...".to_string();
         tokio::task::spawn(async move {
-            match dlc::fetch_dlc_list(appid).await {
-                Ok(dlcs) => result.set(Ok((appid, dlcs))),
-                Err(e) => result.set(Err(e)),
-            }
+            let r = dlc::fetch_dlc_list(appid).await;
+            results.lock().unwrap().insert(appid, r);
         });
     }
 
@@ -239,17 +236,19 @@ impl eframe::App for App {
             }
         }
 
-        if let Some(result) = self.dlc_result.take() {
-            self.dlc_loading = false;
-            match result {
-                Ok((appid, dlcs)) => {
-                    if self.dlc_loading_appid == Some(appid) {
+        // Check for DLC results for the current game
+        if let Some(ref gi) = self.selected_game {
+            let appid = gi.appid;
+            if let Some(result) = self.dlc_results.lock().unwrap().remove(&appid) {
+                self.dlc_loading = false;
+                match result {
+                    Ok(dlcs) => {
                         self.dlc_list = dlcs;
                         self.status_message = format!("Loaded {} DLCs", self.dlc_list.len());
                     }
-                }
-                Err(e) => {
-                    self.status_message = format!("Error: {}", e);
+                    Err(e) => {
+                        self.status_message = format!("Error: {}", e);
+                    }
                 }
             }
         }
