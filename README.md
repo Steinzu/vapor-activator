@@ -3,6 +3,13 @@
 Selective Steam DLC manager using [SmokeAPI](https://github.com/acidicoala/SmokeAPI) and [Koaloader](https://github.com/acidicoala/Koaloader).  
 Pick exactly which DLCs to unlock per game — no all-or-nothing.
 
+## Download
+
+| Platform | Link |
+|----------|------|
+| Linux    | [vapor-activator](https://github.com/Steinzu/vapor-activator/releases/latest/download/vapor-activator) |
+| Windows  | [vapor-activator.exe](https://github.com/Steinzu/vapor-activator/releases/latest/download/vapor-activator.exe) |
+
 ## Features
 
 - Detects installed Steam games from Flatpak, native Linux, and Windows paths
@@ -17,15 +24,6 @@ Pick exactly which DLCs to unlock per game — no all-or-nothing.
 - Clean removal with original file restoration, hook cleanup, and Koaloader config removal
 - Auto-downloads SmokeAPI and Koaloader from GitHub releases
 - Configurable Steam library path, persisted across sessions
-
-## Download
-
-| Platform | Link |
-|----------|------|
-| Linux    | [vapor-activator](https://github.com/Steinzu/vapor-activator/releases/latest/download/vapor-activator) |
-| Windows  | [vapor-activator.exe](https://github.com/Steinzu/vapor-activator/releases/latest/download/vapor-activator.exe) |
-
-> No release yet? Trigger the workflow on [Actions](https://github.com/Steinzu/vapor-activator/actions) — *Release* → *Run workflow* → enter version like `v1.0.0`.
 
 ## Build from source
 
