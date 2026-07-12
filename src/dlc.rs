@@ -63,39 +63,49 @@ fn build_client() -> Result<reqwest::Client, String> {
 async fn fetch_dlc_names(
     client: &reqwest::Client,
     ids: &[u64],
-    hidden_names: &HashMap<u64, String>,
+    hidden_names: HashMap<u64, String>,
 ) -> Vec<DlcInfo> {
     let mut dlcs = Vec::with_capacity(ids.len());
     let count = ids.len();
+    let hidden = std::sync::Arc::new(hidden_names);
 
-    for (i, &id) in ids.iter().enumerate() {
-        let url = format!(
-            "https://store.steampowered.com/api/appdetails?appids={}",
-            id
-        );
-
-        let mut name = match client.get(&url).send().await {
-            Ok(r) => match r.json::<HashMap<String, AppDetailsResponse>>().await {
-                Ok(resp) => resp
-                    .get(&id.to_string())
-                    .and_then(|r| r.data.as_ref())
-                    .map(|d| d.name.clone())
-                    .filter(|n| !n.is_empty())
-                    .unwrap_or_default(),
-                Err(_) => String::new(),
-            },
-            Err(_) => String::new(),
-        };
-
-        // Fall back to hidden DLCs list for names
-        if name.is_empty() {
-            name = hidden_names.get(&id).cloned().unwrap_or_else(|| format!("DLC {}", id));
+    for chunk in ids.chunks(3) {
+        let mut handles = Vec::new();
+        for &id in chunk {
+            let url = format!(
+                "https://store.steampowered.com/api/appdetails?appids={}",
+                id
+            );
+            let client = client.clone();
+            let hidden = hidden.clone();
+            handles.push(tokio::task::spawn(async move {
+                let mut name = match client.get(&url).send().await {
+                    Ok(r) => match r.json::<HashMap<String, AppDetailsResponse>>().await {
+                        Ok(resp) => resp
+                            .get(&id.to_string())
+                            .and_then(|r| r.data.as_ref())
+                            .map(|d| d.name.clone())
+                            .filter(|n| !n.is_empty())
+                            .unwrap_or_default(),
+                        Err(_) => String::new(),
+                    },
+                    Err(_) => String::new(),
+                };
+                if name.is_empty() {
+                    name = hidden.get(&id).cloned().unwrap_or_else(|| format!("DLC {}", id));
+                }
+                (id, name)
+            }));
         }
 
-        dlcs.push(DlcInfo { appid: id, name });
+        for h in handles {
+            if let Ok((id, name)) = h.await {
+                dlcs.push(DlcInfo { appid: id, name });
+            }
+        }
 
-        if count > 10 && i + 1 < count {
-            tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+        if count > 6 {
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         }
     }
 
@@ -220,5 +230,5 @@ pub async fn fetch_dlc_list(appid: u64) -> Result<Vec<DlcInfo>, String> {
         return Ok(vec![]);
     }
 
-    Ok(fetch_dlc_names(&client, &dlc_ids, &hidden_names).await)
+    Ok(fetch_dlc_names(&client, &dlc_ids, hidden_names).await)
 }
