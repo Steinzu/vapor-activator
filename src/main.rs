@@ -241,7 +241,6 @@ impl eframe::App for App {
 
         if let Some(result) = self.dlc_result.take() {
             self.dlc_loading = false;
-            self.dlc_loading_appid = None;
             match result {
                 Ok((appid, dlcs)) => {
                     if self.dlc_loading_appid == Some(appid) {
