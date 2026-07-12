@@ -1,3 +1,6 @@
+// DLC discovery: Steam Store → SteamCMD depots → community hidden list.
+// Names from Store API first, fall back to hidden list.
+
 use serde::Deserialize;
 use std::collections::HashMap;
 

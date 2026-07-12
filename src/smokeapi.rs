@@ -1,3 +1,6 @@
+// Steam API detection, MD5-based install verification, and installer/remover
+// for three methods: Proxy (rename+replace), Hook (dll hijack), Koaloader (sideload).
+
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::io::{Read, Seek};

@@ -1,3 +1,6 @@
+// Download and cache SmokeAPI + Koaloader releases from GitHub.
+// Koaloader zips have x64/x86 subdirs — we suffix as name64.dll / name32.dll.
+
 use std::path::PathBuf;
 
 const SMOKEAPI_RELEASE: &str =

@@ -1,3 +1,5 @@
+// VDF parser and Steam game discovery from libraryfolders.vdf + appmanifest_*.acf.
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 

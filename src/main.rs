@@ -1,3 +1,4 @@
+// Vapor Activator — selective Steam DLC unlocker using SmokeAPI + Koaloader.
 #![windows_subsystem = "windows"]
 
 mod dlc;
@@ -38,6 +39,10 @@ fn save_steam_root(path: &std::path::Path) {
     let _ = std::fs::write(&cfg_path, serde_json::to_string_pretty(&v).unwrap_or_default());
 }
 
+// ---- Async helpers ----
+
+// AsyncResult is for setup downloads (single-slot).
+// DLC results use DlcResults (HashMap) to avoid request races.
 #[derive(Clone)]
 struct AsyncResult<T> {
     inner: Arc<Mutex<Option<Result<T, String>>>>,
