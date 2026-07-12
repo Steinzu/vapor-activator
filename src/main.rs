@@ -82,15 +82,16 @@ struct App {
     selected_game: Option<steam::InstalledGame>,
     detection: smokeapi::GameDetection,
     dlc_list: Vec<dlc::DlcInfo>,
-    dlc_result: AsyncResult<Vec<dlc::DlcInfo>>,
+    dlc_result: AsyncResult<(u64, Vec<dlc::DlcInfo>)>,
     dlc_loading: bool,
     unlocked_dlcs: BTreeSet<u64>,
     status_message: String,
     filter: String,
     smokeapi_ready: bool,
     koaloader_ready: bool,
+    downloading: Option<&'static str>,
     setup_result: AsyncResult<()>,
-    setup_running: bool,
+    dlc_loading_appid: Option<u64>,
     method: Method,
     hook_dll_index: usize,
 }
@@ -132,8 +133,9 @@ impl App {
             filter: String::new(),
             smokeapi_ready: setup::is_smokeapi_installed(),
             koaloader_ready: setup::is_koaloader_installed(),
+            downloading: None,
             setup_result: AsyncResult::new(),
-            setup_running: false,
+            dlc_loading_appid: None,
             method: Method::Proxy,
             hook_dll_index: 0,
         }
@@ -167,9 +169,13 @@ impl App {
         let appid = self.games[idx].appid;
         let result = self.dlc_result.clone();
         self.dlc_loading = true;
+        self.dlc_loading_appid = Some(appid);
         self.status_message = "Loading DLCs...".to_string();
         tokio::task::spawn(async move {
-            result.set(dlc::fetch_dlc_list(appid).await);
+            match dlc::fetch_dlc_list(appid).await {
+                Ok(dlcs) => result.set(Ok((appid, dlcs))),
+                Err(e) => result.set(Err(e)),
+            }
         });
     }
 
@@ -220,7 +226,7 @@ impl App {
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if let Some(result) = self.setup_result.take() {
-            self.setup_running = false;
+            self.downloading = None;
             match result {
                 Ok(()) => {
                     self.smokeapi_ready = setup::is_smokeapi_installed();
@@ -235,10 +241,13 @@ impl eframe::App for App {
 
         if let Some(result) = self.dlc_result.take() {
             self.dlc_loading = false;
+            self.dlc_loading_appid = None;
             match result {
-                Ok(dlcs) => {
-                    self.dlc_list = dlcs;
-                    self.status_message = format!("Loaded {} DLCs", self.dlc_list.len());
+                Ok((appid, dlcs)) => {
+                    if self.dlc_loading_appid == Some(appid) {
+                        self.dlc_list = dlcs;
+                        self.status_message = format!("Loaded {} DLCs", self.dlc_list.len());
+                    }
                 }
                 Err(e) => {
                     self.status_message = format!("Error: {}", e);
@@ -257,7 +266,7 @@ impl eframe::App for App {
         egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.label(&self.status_message);
-                if self.dlc_loading || self.setup_running {
+                if self.dlc_loading || self.downloading.is_some() {
                     ui.add(egui::Spinner::new());
                 }
             });
@@ -296,7 +305,7 @@ impl eframe::App for App {
                         if ui.small_button("Delete").clicked() {
                             self.delete_smokeapi();
                         }
-                    } else if self.setup_running {
+                    } else if self.downloading == Some("SmokeAPI") {
                         ui.add(egui::Spinner::new());
                     } else {
                         ui.colored_label(egui::Color32::YELLOW, "Missing");
@@ -313,7 +322,7 @@ impl eframe::App for App {
                         if ui.small_button("Delete").clicked() {
                             self.delete_koaloader();
                         }
-                    } else if self.setup_running {
+                    } else if self.downloading == Some("Koaloader") {
                         ui.add(egui::Spinner::new());
                     } else {
                         ui.colored_label(egui::Color32::YELLOW, "Missing");
@@ -495,7 +504,7 @@ impl eframe::App for App {
 
 impl App {
     fn download_smokeapi(&mut self) {
-        self.setup_running = true;
+        self.downloading = Some("SmokeAPI");
         self.status_message = "Downloading SmokeAPI...".to_string();
         let result = self.setup_result.clone();
         tokio::task::spawn(async move {
@@ -504,7 +513,7 @@ impl App {
     }
 
     fn download_koaloader(&mut self) {
-        self.setup_running = true;
+        self.downloading = Some("Koaloader");
         self.status_message = "Downloading Koaloader (75MB)...".to_string();
         let result = self.setup_result.clone();
         tokio::task::spawn(async move {
