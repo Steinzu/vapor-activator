@@ -19,7 +19,7 @@ Pick exactly which DLCs to unlock per game — no all-or-nothing.
 - **Multi-source DLC discovery** — Steam Store API + SteamCMD depot metadata + community hidden DLCs list
 - **Proxy mode** (default): replaces `steam_api*.dll` / `libsteam_api.so` — no launch args needed
 - **Hook mode**: injects via `version.dll` / `winhttp.dll` / `winmm.dll` / `dinput8.dll` / `d3d11.dll` / `dxgi.dll` for games that integrity-check the Steam API DLL
-- **Koaloader mode**: full DLL sideloading — proxy DLL forwards calls to the real system DLL while loading SmokeAPI as a module. Original `steam_api.dll` is never touched
+- **Koaloader mode**: full DLL sideloading — proxy DLL forwards calls to the real system DLL while loading SmokeAPI as a module. Original `steam_api.dll` is never touched. Note: Koaloader performs DLL injection, which may trigger antivirus false positives on Windows — this is expected behavior, not malware.
 - Reads existing SmokeAPI configs from prior manual or tool-based installs
 - Clean removal with original file restoration, hook cleanup, and Koaloader config removal
 - Auto-downloads SmokeAPI and Koaloader from GitHub releases
