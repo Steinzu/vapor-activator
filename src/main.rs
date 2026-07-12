@@ -293,6 +293,9 @@ impl eframe::App for App {
                     ui.label("SmokeAPI:");
                     if self.smokeapi_ready {
                         ui.colored_label(egui::Color32::GREEN, "Ready");
+                        if ui.small_button("Delete").clicked() {
+                            self.delete_smokeapi();
+                        }
                     } else if self.setup_running {
                         ui.add(egui::Spinner::new());
                     } else {
@@ -307,6 +310,9 @@ impl eframe::App for App {
                     ui.label("Koaloader:");
                     if self.koaloader_ready {
                         ui.colored_label(egui::Color32::GREEN, "Ready");
+                        if ui.small_button("Delete").clicked() {
+                            self.delete_koaloader();
+                        }
                     } else if self.setup_running {
                         ui.add(egui::Spinner::new());
                     } else {
@@ -504,6 +510,20 @@ impl App {
         tokio::task::spawn(async move {
             result.set(setup::download_koaloader().await);
         });
+    }
+
+    fn delete_smokeapi(&mut self) {
+        let dir = setup::cache_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        self.smokeapi_ready = false;
+        self.status_message = "SmokeAPI deleted".to_string();
+    }
+
+    fn delete_koaloader(&mut self) {
+        let dir = setup::koaloader_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        self.koaloader_ready = false;
+        self.status_message = "Koaloader deleted".to_string();
     }
 
     fn apply_smokeapi(&mut self) {
