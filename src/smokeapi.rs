@@ -287,12 +287,23 @@ pub fn install_koaloader(
     std::fs::copy(&smokeapi_src, config_dir.join(smokeapi_name))
         .map_err(|e| format!("Failed to copy {}: {}", smokeapi_name, e))?;
 
-    // Copy Koaloader proxy DLL
-    let koaloader_src = koaloader_dir.join(proxy_dll);
-    if !koaloader_src.exists() {
-        return Err(format!("Koaloader proxy {} not found. Re-download Koaloader.", proxy_dll));
+    // Copy Koaloader proxy DLL (cache may have name64.dll / name32.dll from zip subdirs)
+    let stem = proxy_dll.strip_suffix(".dll").unwrap_or(proxy_dll);
+    let cache_proxy = match arch {
+        Arch::X64 => {
+            let named = koaloader_dir.join(format!("{}64.dll", stem));
+            if named.exists() { named } else { koaloader_dir.join(proxy_dll) }
+        }
+        Arch::X86 => {
+            let named = koaloader_dir.join(format!("{}32.dll", stem));
+            if named.exists() { named } else { koaloader_dir.join(proxy_dll) }
+        }
+        Arch::Unknown => koaloader_dir.join(proxy_dll),
+    };
+    if !cache_proxy.exists() {
+        return Err(format!("Koaloader proxy {} not found. Re-download Koaloader.", cache_proxy.display()));
     }
-    std::fs::copy(&koaloader_src, config_dir.join(proxy_dll))
+    std::fs::copy(&cache_proxy, config_dir.join(proxy_dll))
         .map_err(|e| format!("Failed to copy Koaloader {}: {}", proxy_dll, e))?;
 
     // Write Koaloader config

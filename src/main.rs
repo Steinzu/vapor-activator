@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 mod dlc;
 mod setup;
 mod smokeapi;

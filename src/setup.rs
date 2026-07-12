@@ -26,7 +26,7 @@ pub fn is_smokeapi_installed() -> bool {
 
 pub fn is_koaloader_installed() -> bool {
     let dir = koaloader_dir();
-    dir.join("version.dll").exists()
+    dir.join("version.dll").exists() || dir.join("version64.dll").exists() || dir.join("version32.dll").exists()
 }
 
 async fn fetch_release_zip(client: &reqwest::Client, api_url: &str) -> Result<Vec<u8>, String> {
@@ -62,12 +62,10 @@ fn extract_dlls(zip_bytes: &[u8], out_dir: &PathBuf, prefixes: &[&str]) -> Resul
 
     for i in 0..archive.len() {
         let mut file = archive.by_index(i).map_err(|e| e.to_string())?;
+        let name = file.name().to_string();
+        let path = std::path::Path::new(&name);
 
-        let fname = std::path::Path::new(file.name())
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
-
+        let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         if !fname.ends_with(".dll") && !fname.ends_with(".so") {
             continue;
         }
@@ -76,7 +74,22 @@ fn extract_dlls(zip_bytes: &[u8], out_dir: &PathBuf, prefixes: &[&str]) -> Resul
             continue;
         }
 
-        let out_path = out_dir.join(fname);
+        // Koaloader zip has x64/ and x86/ subdirs with same filenames.
+        // Distinguish by extracting as name64.dll / name32.dll based on parent.
+        let parent_dir = path.parent()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str());
+        let out_name = if parent_dir == Some("x86") {
+            let stem = fname.strip_suffix(".dll").unwrap_or(fname);
+            format!("{}32.dll", stem)
+        } else if parent_dir == Some("x64") {
+            let stem = fname.strip_suffix(".dll").unwrap_or(fname);
+            format!("{}64.dll", stem)
+        } else {
+            fname.to_string()
+        };
+
+        let out_path = out_dir.join(&out_name);
         let mut out = std::fs::File::create(&out_path).map_err(|e| e.to_string())?;
         std::io::copy(&mut file, &mut out).map_err(|e| e.to_string())?;
     }
