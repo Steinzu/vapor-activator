@@ -356,7 +356,7 @@ pub fn remove_proxy(
                 && files_match(&hook_path, &koala_dir.join(format!("{}64.dll", hook.strip_suffix(".dll").unwrap_or(hook))));
             let is_koala32 = koala_dir.join(format!("{}32.dll", hook.strip_suffix(".dll").unwrap_or(hook))).exists()
                 && files_match(&hook_path, &koala_dir.join(format!("{}32.dll", hook.strip_suffix(".dll").unwrap_or(hook))));
-            if is_smokeapi || is_koala || is_koala32 || is_koala_install {
+            if is_smokeapi || is_koala || is_koala32 {
                 let _ = std::fs::remove_file(&hook_path);
             }
         }
