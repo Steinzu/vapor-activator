@@ -18,6 +18,15 @@ Pick exactly which DLCs to unlock per game — no all-or-nothing.
 - Auto-downloads SmokeAPI and Koaloader from GitHub releases
 - Configurable Steam library path, persisted across sessions
 
+## Download
+
+| Platform | Link |
+|----------|------|
+| Linux    | [vapor-activator](https://github.com/Steinzu/vapor-activator/releases/latest/download/vapor-activator) |
+| Windows  | [vapor-activator.exe](https://github.com/Steinzu/vapor-activator/releases/latest/download/vapor-activator.exe) |
+
+> No release yet? Trigger the workflow on [Actions](https://github.com/Steinzu/vapor-activator/actions) — *Release* → *Run workflow* → enter version like `v1.0.0`.
+
 ## Build from source
 
 Requires [Rust](https://rustup.rs).
