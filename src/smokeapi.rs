@@ -335,14 +335,28 @@ pub fn remove_proxy(
             .map_err(|e| format!("Failed to restore original: {e}"))?;
     } else {
         let smokeapi_src = cache.join(smokeapi_name);
+        let koala_dir = crate::setup::koaloader_dir();
+
         if target.exists() && files_match(&target, &smokeapi_src) {
             std::fs::remove_file(&target)
                 .map_err(|e| format!("Failed to remove SmokeAPI DLL: {e}"))?;
         }
 
+        let koala_config = dir.join("Koaloader.config.json");
+        let is_koala_install = koala_config.exists();
+
         for hook in &["version.dll", "winhttp.dll", "winmm.dll", "dinput8.dll", "d3d11.dll", "dxgi.dll"] {
             let hook_path = dir.join(hook);
-            if hook_path.exists() && files_match(&hook_path, &smokeapi_src) {
+            if !hook_path.exists() {
+                continue;
+            }
+            // Match against SmokeAPI (hook mode) or Koaloader proxy (Koaloader mode)
+            let is_smokeapi = files_match(&hook_path, &smokeapi_src);
+            let is_koala = koala_dir.join(format!("{}64.dll", hook.strip_suffix(".dll").unwrap_or(hook))).exists()
+                && files_match(&hook_path, &koala_dir.join(format!("{}64.dll", hook.strip_suffix(".dll").unwrap_or(hook))));
+            let is_koala32 = koala_dir.join(format!("{}32.dll", hook.strip_suffix(".dll").unwrap_or(hook))).exists()
+                && files_match(&hook_path, &koala_dir.join(format!("{}32.dll", hook.strip_suffix(".dll").unwrap_or(hook))));
+            if is_smokeapi || is_koala || is_koala32 || is_koala_install {
                 let _ = std::fs::remove_file(&hook_path);
             }
         }
@@ -355,10 +369,8 @@ pub fn remove_proxy(
             }
         }
 
-        // Clean Koaloader config
-        let koaloader_config = dir.join("Koaloader.config.json");
-        if koaloader_config.exists() {
-            let _ = std::fs::remove_file(&koaloader_config);
+        if is_koala_install {
+            let _ = std::fs::remove_file(&koala_config);
         }
     }
 
