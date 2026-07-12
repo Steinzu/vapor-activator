@@ -196,15 +196,17 @@ pub async fn fetch_dlc_list(appid: u64) -> Result<Vec<DlcInfo>, String> {
 
     let mut dlc_ids: Vec<u64> = data.dlc.clone();
 
-    // Merge SteamCMD depot DLCs
-    for id in fetch_dlc_from_steamcmd(&client, appid).await {
+    // Fetch SteamCMD and hidden DLCs in parallel
+    let (cmd_ids, (hidden_ids, hidden_names)) = tokio::join!(
+        fetch_dlc_from_steamcmd(&client, appid),
+        fetch_hidden_dlcs(&client, appid),
+    );
+
+    for id in cmd_ids {
         if !dlc_ids.contains(&id) {
             dlc_ids.push(id);
         }
     }
-
-    // Merge hidden DLCs and collect names
-    let (hidden_ids, hidden_names) = fetch_hidden_dlcs(&client, appid).await;
     for id in hidden_ids {
         if !dlc_ids.contains(&id) {
             dlc_ids.push(id);

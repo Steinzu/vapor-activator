@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::io::Read;
+use std::io::{Read, Seek};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -128,7 +128,6 @@ fn detect_exe_arch(game_dir: &Path) -> Arch {
             let mut header = [0u8; 64];
             f.read_exact(&mut header).ok()?;
             let pe_offset = u32::from_le_bytes([header[0x3C], header[0x3D], header[0x3E], header[0x3F]]) as u64;
-            use std::io::Seek;
             f.seek(std::io::SeekFrom::Start(pe_offset + 4)).ok()?;
             let mut machine = [0u8; 2];
             f.read_exact(&mut machine).ok()?;
